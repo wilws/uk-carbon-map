@@ -6,6 +6,14 @@ Data comes from the [National Grid Carbon Intensity API](https://api.carboninten
 
 The project streams that data through Kafka rather than querying the API directly from the browser. That is deliberate overkill for 14 regions: the point is a working event-streaming pipeline you can inspect at every stage, not the shortest path to a map.
 
+![The map view — live intensity and generation mix per region](docs/view/app_view.png)
+
+Selecting a region opens its generation trend over the last 24 hours, by fuel:
+
+![The generation trend view](docs/view/trend.png)
+
+> **Note:** the trend chart is currently generated client-side — a seeded random walk from the region's live reading, not recorded history. Real trends need the Postgres tier described below, which isn't built yet.
+
 ## How it works
 
 ```
