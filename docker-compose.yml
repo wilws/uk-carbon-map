@@ -1,0 +1,117 @@
+services:
+  # The Distributed Event Streaming Broker (KRaft Mode)
+  kafka-broker:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka-cluster
+    ports:
+      - "9092:9092"
+    environment:
+      # Unique ID for this Kafka node
+      KAFKA_NODE_ID: 1
+
+      # Maps listener names to protocols. Here everything uses PLAINTEXT (no encryption/authentication).
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+
+      # Kafka listens on three endpoints:
+      # 29092 → Kafka clients inside Docker
+      # 29093 → KRaft controller communication
+      # 9092  → Kafka clients outside Docker
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092"
+
+      # Replication factor for Kafka's consumer-offset topic. 1 is appropriate for one broker.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # Consumer groups rebalance immediately rather than waiting.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Minimum in-sync replicas required for transaction state.
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Replication factor for the transaction-state topic.
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      # This container acts as both a Kafka broker and KRaft controller.
+      KAFKA_PROCESS_ROLES: "broker,controller"
+
+      # tells Kafka which nodes are allowed to act as KRaft controllers and how to reach them.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka-broker:29093"
+
+      # Defines the addresses/ports Kafka listens on.
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+
+      # Tells Kafka which listener is used for controller communication.
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+
+      # Where Kafka stores its data/log segments inside the container.
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+
+      # Unique identifier for this Kafka cluster.
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+
+    networks:
+      - uk_carbon_map
+
+  # UI Visualizer to monitor your Kafka queues, topics, and message keys
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-dashboard
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka-broker
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-broker:29092
+    networks:
+      - uk_carbon_map
+
+  # ── HOT tier: current state cache ──
+  redis:
+    image: redis:7-alpine
+    container_name: carbon-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - ./backend/storage/redis/data:/data
+    networks:
+      - uk_carbon_map
+
+  # ── WARM tier: queryable history ──
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: carbon-postgres
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: carbon
+      POSTGRES_PASSWORD: carbon
+      POSTGRES_DB: carbon
+    volumes:
+      - ./backend/storage/postgres/data:/var/lib/postgresql/data
+    networks:
+      - uk_carbon_map
+
+  # ── COLD tier: object archive  ──
+  minio:
+    image: minio/minio:latest
+    container_name: carbon-minio
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio_admin
+
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./backend/storage/minio/data:/data
+    networks:
+      - uk_carbon_map
+
+networks:
+  uk_carbon_map:
+    driver: bridge
